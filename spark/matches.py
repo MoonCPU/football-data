@@ -1,9 +1,13 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import explode, col, when
+from dotenv import load_dotenv
 
 import os
 os.environ['HADOOP_HOME'] = 'C:\\hadoop' 
 os.environ['PATH'] += ';C:\\hadoop\\bin' 
+
+load_dotenv()
+POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD')
 
 spark = SparkSession.builder.appName("Football Matches Processing").getOrCreate()
 
@@ -36,10 +40,10 @@ df_flat = df_matches.select(
 jdbc_url = "jdbc:postgresql://localhost:5432/football_data" 
 db_properties = {
     "user": "postgres",    
-    "password": "soo020674",
+    "password": POSTGRES_PASSWORD,
     "driver": "org.postgresql.Driver"
 }
-table_name = "matches"
+table_name = "matches_staging"
 
 try:
     df_flat.write \
