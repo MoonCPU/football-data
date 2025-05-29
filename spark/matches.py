@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import explode, col, when
+from pyspark.sql.functions import explode, col, when, size, lit
 from dotenv import load_dotenv
 
 import os
@@ -11,7 +11,7 @@ POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD')
 
 spark = SparkSession.builder.appName("Football Matches Processing").getOrCreate()
 
-df_raw = spark.read.option("multiline", "true").json("../matches.json")
+df_raw = spark.read.option("multiline", "true").json("../all_matches_data.json")
 
 df_matches = df_raw.select(explode("matches").alias("match"))
 
@@ -19,7 +19,7 @@ df_flat = df_matches.select(
     col("match.id").alias("match_id"),
     col("match.area.id").alias("area_id"),
     col("match.competition.id").alias("competition_id"),
-    col("match.season.id").alias("season_id"),    
+    col("match.season.id").alias("season_id"),     
     col("match.utcDate").alias("date"),
     col("match.status").alias("status"),
     col("match.matchday").alias("matchday"),
@@ -34,7 +34,9 @@ df_flat = df_matches.select(
     col("match.score.fullTime.away").alias("away_score"),
     col("match.score.halfTime.home").alias("home_ht_score"),
     col("match.score.halfTime.away").alias("away_ht_score"),
-    col("match.referees")[0]["name"].alias("referee_name")
+    when(size(col("match.referees")) > 0, col("match.referees").getItem(0).getItem("name"))
+    .otherwise(lit("N/A")) 
+    .alias("referee_name")
 )
 
 jdbc_url = "jdbc:postgresql://localhost:5432/football_data" 
@@ -43,7 +45,7 @@ db_properties = {
     "password": POSTGRES_PASSWORD,
     "driver": "org.postgresql.Driver"
 }
-table_name = "matches_staging"
+table_name = "staging.matches"
 
 try:
     df_flat.write \

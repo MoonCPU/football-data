@@ -1,6 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import explode
-from pyspark.sql import Row
+from pyspark.sql.functions import explode, col, coalesce, lit
 from dotenv import load_dotenv
 
 import os
@@ -15,24 +14,27 @@ spark = SparkSession.builder \
     .config("spark.jars", "file:///C:/spark/jars/postgresql-42.7.5.jar") \
     .getOrCreate()
 
-df_raw = spark.read.option("multiline", "true").json("../matches.json")
+df_raw = spark.read.option("multiline", "true").json("../all_matches_data.json")
 
 df_matches = df_raw.select(explode("matches").alias("match"))
 
-first_row = df_matches.select("match.season").first()
-season = first_row["season"]
+seasons_df_flat = df_matches.select(
+    col("match.season.id").alias("season_id"),
+    col("match.season.startDate").alias("startDate"),
+    col("match.season.endDate").alias("endDate"),
+    col("match.competition.id").alias("competition_id"),
+    coalesce(col("match.season.winner"), lit("N/A")).alias("season_winner_name") 
+)
 
-season_id = season['id']
-season_startDate = int(season['startDate'][:4])
-season_endDate = int(season['endDate'][:4])
-season_winner = season['winner'] if season['winner'] is not None else "N/A"
+seasons_distinct_df = seasons_df_flat.distinct()
 
-seasons_df = spark.createDataFrame([
-    Row(season_id=season_id, 
-        season_start_date=season_startDate, 
-        season_end_date=season_endDate, 
-        season_winner=season_winner)
-])
+seasons_final_df = seasons_distinct_df.select(
+    col("season_id"),
+    col("startDate").substr(1, 4).cast("bigint").alias("season_start_date"), 
+    col("endDate").substr(1, 4).cast("int").alias("season_end_date"),  
+    col("competition_id"),
+    col("season_winner_name").alias("season_winner")
+)
 
 jdbc_url = "jdbc:postgresql://localhost:5432/football_data" 
 db_properties = {
@@ -40,10 +42,10 @@ db_properties = {
     "password": POSTGRES_PASSWORD,
     "driver": "org.postgresql.Driver"
 }
-table_name = "seasons"
+table_name = "staging.seasons"
 
 try:
-    seasons_df.write \
+    seasons_final_df.write \
         .mode("overwrite") \
         .option("truncate", "true") \
         .jdbc(url=jdbc_url,
